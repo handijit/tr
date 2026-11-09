@@ -1,0 +1,100 @@
+{
+  "name": "@handijit/tr",
+  "version": "1.0.0",
+  "description": "Zero-dependency helpers for Turkey: locale-safe text casing and sorting, TCKN/VKN/IBAN validation, phone numbers, lira amounts in digits and in words, dd.MM.yyyy dates, provinces and licence plates.",
+  "author": "Han Dijit",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/handijit/tr.git"
+  },
+  "homepage": "https://github.com/handijit/tr#readme",
+  "bugs": {
+    "url": "https://github.com/handijit/tr/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./build/index.cjs",
+  "module": "./build/index.mjs",
+  "types": "./build/index.d.ts",
+  "unpkg": "./build/index.umd.js",
+  "jsdelivr": "./build/index.umd.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./build/index.d.mts",
+        "default": "./build/index.mjs"
+      },
+      "require": {
+        "types": "./build/index.d.ts",
+        "default": "./build/index.cjs"
+      },
+      "default": "./build/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "build",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "sh ./scripts/prod-build.sh",
+    "dev": "sh ./scripts/dev-build.sh",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run --coverage",
+    "size": "node ./scripts/report-size.mjs",
+    "lint:package": "publint && attw --pack .",
+    "bench": "node ./scripts/bench.mjs",
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build && npm run size && npm run lint:package",
+    "prepublishOnly": "npm run verify"
+  },
+  "keywords": [
+    "turkish",
+    "turkey",
+    "turkiye",
+    "tckn",
+    "vkn",
+    "iban",
+    "turkish-lira",
+    "try",
+    "number-to-words",
+    "yaziyla",
+    "phone",
+    "e164",
+    "slug",
+    "collation",
+    "turkish-i",
+    "provinces",
+    "license-plate",
+    "validation",
+    "formatting"
+  ],
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@eslint/js": "^10.0.1",
+    "@rollup/plugin-terser": "^1.0.2",
+    "@rollup/plugin-typescript": "^12.3.1",
+    "@types/node": "^24",
+    "@typescript/native": "npm:typescript@^7",
+    "@vitest/coverage-v8": "^5.1.0",
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "jsdom": "^31.0.0",
+    "prettier": "^3.9.10",
+    "publint": "^0.3.25",
+    "rollup": "^4.68.2",
+    "rollup-plugin-dts": "^6.5.1",
+    "tslib": "^2.9.1",
+    "typescript": "npm:@typescript/typescript6@^6",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
+  }
+}

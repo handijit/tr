@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    // The engines floor and every evergreen browser support this; nothing to downlevel.
+    "target": "ES2023",
+    "module": "ESNext",
+    // No DOM: the package touches no browser API, so a stray `window` is a type error.
+    "lib": ["ES2023"],
+    "moduleResolution": "bundler",
+    // An isomorphic library must not lean on Node or test globals.
+    "types": [],
+    "noEmit": false,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "useUnknownInCatchVariables": true,
+
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "include": ["lib"],
+  "exclude": ["node_modules", "__tests__", "build"]
+}
