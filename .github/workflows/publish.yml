@@ -59,6 +59,14 @@ jobs:
             exit 1
           fi
 
+      # A token npm does not accept surfaces otherwise only on the upload, as a 404 that reads
+      # like a missing package, after every check has already run.
+      - name: Check the npm token
+        if: steps.check.outputs.mode == 'publish'
+        run: npm whoami
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+
       # The CHANGELOG section becomes the GitHub Release note; a release without one stops here,
       # before anything reaches the registry.
       - name: Read the release notes from CHANGELOG.md
