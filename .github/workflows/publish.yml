@@ -33,11 +33,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
-      # Three outcomes, none of them a failure:
-      #   skip          this version is already on npm (the commit did not bump it)
-      #   publish       the package is on npm and this version is new
-      #   first-release the package is not on npm at all. A maintainer publishes the first
-      #                 version by hand; this run verifies everything and publishes nothing.
+      # Two outcomes, neither of them a failure:
+      #   skip     this version is already on npm (the commit did not bump it)
+      #   publish  this version is new, or the package is not on npm at all (its first release)
       - name: Decide whether this version needs publishing
         id: check
         run: |
@@ -53,8 +51,8 @@ jobs:
             echo "$NAME@$VERSION is new; releasing."
             echo "mode=publish" >> "$GITHUB_OUTPUT"
           elif grep -q "E404" "$RUNNER_TEMP/npm-view.log"; then
-            echo "$NAME is not on npm yet; verifying only."
-            echo "mode=first-release" >> "$GITHUB_OUTPUT"
+            echo "$NAME is not on npm yet; releasing its first version."
+            echo "mode=publish" >> "$GITHUB_OUTPUT"
           else
             # A registry outage must not be mistaken for a package that does not exist.
             cat "$RUNNER_TEMP/npm-view.log" >&2
@@ -176,19 +174,10 @@ jobs:
       - name: Summary
         env:
           PACKAGE: ${{ steps.check.outputs.name }}@${{ steps.check.outputs.version }}
-          NAME: ${{ steps.check.outputs.name }}
           MODE: ${{ steps.check.outputs.mode }}
         run: |
-          case "$MODE" in
-            publish)
-              echo "Published $PACKAGE" >> "$GITHUB_STEP_SUMMARY"
-              ;;
-            first-release)
-              MESSAGE="Not published: $NAME is not on npm yet. Every check passed for $PACKAGE. Publish the first version by hand (npm login, then npm publish --access public); later versions are published by this workflow."
-              echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
-              echo "::notice title=First release is manual::$MESSAGE"
-              ;;
-            *)
-              echo "Skipped: $PACKAGE is already on npm. Bump the version in package.json to release." >> "$GITHUB_STEP_SUMMARY"
-              ;;
-          esac
+          if [ "$MODE" = "publish" ]; then
+            echo "Published $PACKAGE" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Skipped: $PACKAGE is already on npm. Bump the version in package.json to release." >> "$GITHUB_STEP_SUMMARY"
+          fi
