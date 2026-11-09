@@ -1,0 +1,194 @@
+name: Publish to npm
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the release tag and create the GitHub Release
+  id-token: write # signs the npm provenance statement
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false # never let two releases race onto the registry
+
+jobs:
+  publish:
+    # A manual run from any other branch must not be able to release.
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+
+      # Dependency lifecycle scripts are an arbitrary-code-execution path during install.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # Three outcomes, none of them a failure:
+      #   skip          this version is already on npm (the commit did not bump it)
+      #   publish       the package is on npm and this version is new
+      #   first-release the package is not on npm at all. A maintainer publishes the first
+      #                 version by hand; this run verifies everything and publishes nothing.
+      - name: Decide whether this version needs publishing
+        id: check
+        run: |
+          NAME="$(node -p "require('./package.json').name")"
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NAME@$VERSION is already on npm; nothing to release."
+            echo "mode=skip" >> "$GITHUB_OUTPUT"
+          elif npm view "$NAME" name >/dev/null 2>"$RUNNER_TEMP/npm-view.log"; then
+            echo "$NAME@$VERSION is new; releasing."
+            echo "mode=publish" >> "$GITHUB_OUTPUT"
+          elif grep -q "E404" "$RUNNER_TEMP/npm-view.log"; then
+            echo "$NAME is not on npm yet; verifying only."
+            echo "mode=first-release" >> "$GITHUB_OUTPUT"
+          else
+            # A registry outage must not be mistaken for a package that does not exist.
+            cat "$RUNNER_TEMP/npm-view.log" >&2
+            exit 1
+          fi
+
+      # The CHANGELOG section becomes the GitHub Release note; a release without one stops here,
+      # before anything reaches the registry.
+      - name: Read the release notes from CHANGELOG.md
+        if: steps.check.outputs.mode != 'skip'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          awk -v heading="## [$VERSION]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && (/^## \[/ || /^\[.+\]: /) { exit }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/release-notes.md"; then
+            echo "CHANGELOG.md has no section for $VERSION." >&2
+            exit 1
+          fi
+
+      - name: Lint
+        if: steps.check.outputs.mode != 'skip'
+        run: npm run lint
+
+      - name: Type-check
+        if: steps.check.outputs.mode != 'skip'
+        run: npm run typecheck
+
+      - name: Test
+        if: steps.check.outputs.mode != 'skip'
+        run: npm test
+
+      - name: Build
+        if: steps.check.outputs.mode != 'skip'
+        run: npm run build
+
+      - name: Size budget
+        if: steps.check.outputs.mode != 'skip'
+        run: npm run size
+
+      - name: Lint the package
+        if: steps.check.outputs.mode != 'skip'
+        run: npm run lint:package
+
+      # The tests measure the source; this measures the tarball a consumer installs.
+      - name: Smoke test the packed tarball
+        if: steps.check.outputs.mode != 'skip'
+        run: |
+          npm pack
+          cd "$(mktemp -d)"
+          npm init -y >/dev/null
+          npm install --ignore-scripts "$GITHUB_WORKSPACE"/*.tgz
+
+          cat > esm.mjs <<'EOF'
+          import { formatMoney, isValidTckn, PROVINCES, toUpperCase } from "@handijit/tr";
+          if (toUpperCase("istanbul") !== "İSTANBUL") {
+            throw new Error("ESM entry is broken: toUpperCase");
+          }
+          if (formatMoney(349050) !== "3.490,50 TL") {
+            throw new Error("ESM entry is broken: formatMoney");
+          }
+          if (!isValidTckn("10000000146") || isValidTckn("10000000147")) {
+            throw new Error("ESM entry is broken: isValidTckn");
+          }
+          if (PROVINCES.length !== 81) {
+            throw new Error("ESM entry is broken: PROVINCES");
+          }
+          console.log("ESM entry OK");
+          EOF
+
+          cat > cjs.cjs <<'EOF'
+          const { formatMoney, isValidTckn, PROVINCES, toUpperCase } = require("@handijit/tr");
+          if (toUpperCase("istanbul") !== "İSTANBUL") {
+            throw new Error("CJS entry is broken: toUpperCase");
+          }
+          if (formatMoney(349050) !== "3.490,50 TL") {
+            throw new Error("CJS entry is broken: formatMoney");
+          }
+          if (!isValidTckn("10000000146") || isValidTckn("10000000147")) {
+            throw new Error("CJS entry is broken: isValidTckn");
+          }
+          if (PROVINCES.length !== 81) {
+            throw new Error("CJS entry is broken: PROVINCES");
+          }
+          console.log("CJS entry OK");
+          EOF
+
+          node esm.mjs
+          node cjs.cjs
+
+      # prepublishOnly re-runs `npm run verify` here as the last gate.
+      - name: Publish
+        if: steps.check.outputs.mode == 'publish'
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
+
+      - name: Tag the release
+        if: steps.check.outputs.mode == 'publish'
+        run: |
+          TAG="v${{ steps.check.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
+
+      - name: Create the GitHub Release
+        if: steps.check.outputs.mode == 'publish'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.check.outputs.version }}"
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+
+      - name: Summary
+        env:
+          PACKAGE: ${{ steps.check.outputs.name }}@${{ steps.check.outputs.version }}
+          NAME: ${{ steps.check.outputs.name }}
+          MODE: ${{ steps.check.outputs.mode }}
+        run: |
+          case "$MODE" in
+            publish)
+              echo "Published $PACKAGE" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            first-release)
+              MESSAGE="Not published: $NAME is not on npm yet. Every check passed for $PACKAGE. Publish the first version by hand (npm login, then npm publish --access public); later versions are published by this workflow."
+              echo "$MESSAGE" >> "$GITHUB_STEP_SUMMARY"
+              echo "::notice title=First release is manual::$MESSAGE"
+              ;;
+            *)
+              echo "Skipped: $PACKAGE is already on npm. Bump the version in package.json to release." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+          esac

@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [master] # master is verified by publish.yml; do not run everything twice
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # 24 is the engines floor declared in package.json; 26 is the current Active LTS.
+        node-version: ["24", "26"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      # Dependency lifecycle scripts are an arbitrary-code-execution path during install.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Size budget
+        run: npm run size
+
+      - name: Lint the package
+        run: npm run lint:package
+
+      # The tests measure the source; this measures the tarball a consumer installs.
+      - name: Smoke test the packed tarball
+        run: |
+          npm pack
+          cd "$(mktemp -d)"
+          npm init -y >/dev/null
+          npm install --ignore-scripts "$GITHUB_WORKSPACE"/*.tgz
+
+          cat > esm.mjs <<'EOF'
+          import { formatMoney, isValidTckn, PROVINCES, toUpperCase } from "@handijit/tr";
+          if (toUpperCase("istanbul") !== "İSTANBUL") {
+            throw new Error("ESM entry is broken: toUpperCase");
+          }
+          if (formatMoney(349050) !== "3.490,50 TL") {
+            throw new Error("ESM entry is broken: formatMoney");
+          }
+          if (!isValidTckn("10000000146") || isValidTckn("10000000147")) {
+            throw new Error("ESM entry is broken: isValidTckn");
+          }
+          if (PROVINCES.length !== 81) {
+            throw new Error("ESM entry is broken: PROVINCES");
+          }
+          console.log("ESM entry OK");
+          EOF
+
+          cat > cjs.cjs <<'EOF'
+          const { formatMoney, isValidTckn, PROVINCES, toUpperCase } = require("@handijit/tr");
+          if (toUpperCase("istanbul") !== "İSTANBUL") {
+            throw new Error("CJS entry is broken: toUpperCase");
+          }
+          if (formatMoney(349050) !== "3.490,50 TL") {
+            throw new Error("CJS entry is broken: formatMoney");
+          }
+          if (!isValidTckn("10000000146") || isValidTckn("10000000147")) {
+            throw new Error("CJS entry is broken: isValidTckn");
+          }
+          if (PROVINCES.length !== 81) {
+            throw new Error("CJS entry is broken: PROVINCES");
+          }
+          console.log("CJS entry OK");
+          EOF
+
+          node esm.mjs
+          node cjs.cjs
