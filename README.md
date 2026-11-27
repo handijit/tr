@@ -382,9 +382,14 @@ The minified browser bundle has a 4 kB gzip budget, enforced by `npm run size`.
 
 ```bash
 npm install
-npm run verify   # lint, typecheck, test with coverage, build, size budget, package lint
-npm run bench    # measure the built output
+npm run verify      # lint (ESLint + Prettier), typecheck, test with coverage, build, size budget, package lint
+npm run test:smoke  # install the packed tarball in a clean project and load it (after a build)
+npm run bench       # measure the built output
 ```
+
+The ESLint, Prettier, TypeScript and Vitest settings come from
+[`@handijitcom/config`](https://github.com/handijit/config)'s library presets;
+CI runs the gate on Node 24 (the engines floor) and 26 (the Active LTS).
 
 320 tests, enforced at 100% for statements, branches, functions and lines. A
 change to a public function comes with its tests, a README update and a
